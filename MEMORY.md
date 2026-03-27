@@ -31,3 +31,6 @@
   - Design der Agenten/Producer/Consumer muss Replay-Fähigkeit, idempotente Verarbeitung und Snapshotting berücksichtigen.
   - Performance- und Konsistenztradeoffs (synchron vs. eventual consistency) werden explizit im Architekturkapitel behandelt.
 
+
+# Demo change
+- 2026-03-28: demo commit to trigger post-commit hook
