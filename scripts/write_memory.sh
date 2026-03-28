@@ -32,23 +32,57 @@ HOST=$(hostname)
 SSH_CMD="ssh -i ~/.ssh/openclaw_deploy_key -o StrictHostKeyChecking=no"
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo ".")"
 
+# Validate target and check for real changes
+pushd "$REPO_ROOT" >/dev/null
+changed_files=()
+if git ls-files --error-unmatch "$MEMORY_PATH" >/dev/null 2>&1; then
+  : # file is tracked
+else
+  # ensure parent dir tracked; add file will track it
+  git add --intent-to-add "$MEMORY_PATH" || true
+fi
+
+# Check whether file actually changed
+if git diff --quiet -- "$MEMORY_PATH"; then
+  # no changes compared to HEAD
+  changed_files=()
+else
+  changed_files=("$MEMORY_PATH")
+fi
+
 push_success=false
 commit_sha=""
-# perform git operations in current shell so variables persist
-pushd "$REPO_ROOT" >/dev/null
-git add "$MEMORY_PATH"
-git commit -m "chore(memory): update MEMORY.md [auto] - $TIMESTAMP" || true
-# capture commit SHA (may be unchanged if nothing new)
+
+if [[ ${#changed_files[@]} -eq 0 ]]; then
+  # nothing to commit
+  text="ℹ️ No changes to commit for $MEMORY_PATH"
+  PAYLOAD=$(jq -n --arg t "$TIMESTAMP" --arg h "$HOST" --arg p "$MEMORY_PATH" --arg text "$text" '{timestamp:$t,host:$h,path:$p,summary: "no-change",text:$text}')
+  curl -s -S -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$WEBHOOK_URL" || true
+  popd >/dev/null
+  echo "No changes detected for $MEMORY_PATH; notified and exiting"
+  exit 0
+fi
+
+# commit
+git add "${changed_files[@]}"
+git commit -m "chore(config): update ${changed_files[*]} [auto] - $TIMESTAMP" || true
 commit_sha=$(git rev-parse HEAD || true)
-# attempt push with retries
-for i in 1 2 3; do
-  if GIT_SSH_COMMAND="$SSH_CMD" git push origin main; then
-    push_success=true
-    break
-  else
-    sleep $((i * 2))
-  fi
-done
+# attempt push with retries or background push
+if [[ "${ASYNC_PUSH:-0}" == "1" ]]; then
+  # spawn background pusher that will notify once push completes
+  COMMIT_URL="https://github.com/kevo3000/openCommerceClaw/commit/$commit_sha"
+  nohup ./scripts/push_notify_bg.sh "$REPO_ROOT" "$WEBHOOK_URL" "$commit_sha" "$COMMIT_URL" >/dev/null 2>&1 &
+  push_success=false
+else
+  for i in 1 2 3; do
+    if GIT_SSH_COMMAND="$SSH_CMD" git push origin main; then
+      push_success=true
+      break
+    else
+      sleep $((i * 2))
+    fi
+  done
+fi
 popd >/dev/null
 
 # prepare payload (include commit SHA and commit URL)
@@ -59,18 +93,22 @@ if [[ -n "$commit_sha" ]]; then
 fi
 # human-readable text for Rocket.Chat incoming webhook
 if [[ "$push_success" == "true" || "$push_success" == "True" ]]; then
-  text="✅ MEMORY.md updated and pushed: $commit_url"
+  text="✅ ${changed_files[*]} updated and pushed: $commit_url"
+elif [[ "${ASYNC_PUSH:-0}" == "1" ]]; then
+  text="✅ ${changed_files[*]} committed (push in background): $commit_url"
 else
-  text="❌ MEMORY.md updated locally, but push failed. See repo logs."
+  text="❌ ${changed_files[*]} committed locally, but push failed. See repo logs."
 fi
 
-PAYLOAD=$(jq -n --arg t "$TIMESTAMP" --arg h "$HOST" --arg p "$MEMORY_PATH" --arg pushed "${push_success}" --arg sha "$commit_sha" --arg curl "$commit_url" --arg text "$text" '{timestamp:$t,host:$h,path:$p,pushed:$pushed,commit_sha:$sha,commit_url:$curl,summary: "MEMORY.md updated",text:$text}')
+PAYLOAD=$(jq -n --arg t "$TIMESTAMP" --arg h "$HOST" --arg p "$MEMORY_PATH" --arg pushed "${push_success}" --arg sha "$commit_sha" --arg curl "$commit_url" --arg text "$text" --argjson files "$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1].split()))' "${changed_files[*]}") '{timestamp:$t,host:$h,path:$p,pushed:$pushed,commit_sha:$sha,commit_url:$curl,changed_files:$files,summary: "config updated",text:$text}')
 
 # send webhook (best-effort; do not fail the script if webhook fails)
 curl -s -S -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$WEBHOOK_URL" || true
 
-if $push_success; then
-  echo "Wrote $MEMORY_PATH, committed and pushed to origin/main, and notified $WEBHOOK_URL at $TIMESTAMP"
+if [[ "$push_success" == "true" ]]; then
+  echo "Wrote ${changed_files[*]}, committed and pushed to origin/main, and notified $WEBHOOK_URL at $TIMESTAMP"
+elif [[ "${ASYNC_PUSH:-0}" == "1" ]]; then
+  echo "Wrote ${changed_files[*]}, committed locally and spawned background push notifier, initial notification sent to $WEBHOOK_URL at $TIMESTAMP"
 else
-  echo "Wrote $MEMORY_PATH and notified $WEBHOOK_URL at $TIMESTAMP — push failed, see git logs" >&2
+  echo "Wrote ${changed_files[*]} and notified $WEBHOOK_URL at $TIMESTAMP — push failed, see git logs" >&2
 fi
