@@ -51,8 +51,13 @@ commit_sha=""
   done
 )
 
-# prepare payload (include commit SHA)
-PAYLOAD=$(jq -n --arg t "$TIMESTAMP" --arg h "$HOST" --arg p "$MEMORY_PATH" --arg pushed "${push_success}" --arg sha "$commit_sha" '{timestamp:$t,host:$h,path:$p,pushed:$pushed,commit_sha:$sha,summary: "MEMORY.md updated"}')
+# prepare payload (include commit SHA and commit URL)
+REPO_URL="https://github.com/kevo3000/openCommerceClaw"
+commit_url=""
+if [[ -n "$commit_sha" ]]; then
+  commit_url="$REPO_URL/commit/$commit_sha"
+fi
+PAYLOAD=$(jq -n --arg t "$TIMESTAMP" --arg h "$HOST" --arg p "$MEMORY_PATH" --arg pushed "${push_success}" --arg sha "$commit_sha" --arg curl "$commit_url" '{timestamp:$t,host:$h,path:$p,pushed:$pushed,commit_sha:$sha,commit_url:$curl,summary: "MEMORY.md updated"}')
 
 # send webhook (best-effort; do not fail the script if webhook fails)
 curl -s -S -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$WEBHOOK_URL" || true
