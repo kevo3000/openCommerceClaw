@@ -55,11 +55,15 @@ commit_sha=""
 
 if [[ ${#changed_files[@]} -eq 0 ]]; then
   # nothing to commit
-  text="ℹ️ No changes to commit for $MEMORY_PATH"
-  PAYLOAD=$(jq -n --arg t "$TIMESTAMP" --arg h "$HOST" --arg p "$MEMORY_PATH" --arg text "$text" '{timestamp:$t,host:$h,path:$p,summary: "no-change",text:$text}')
-  curl -s -S -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$WEBHOOK_URL" || true
   popd >/dev/null
-  echo "No changes detected for $MEMORY_PATH; notified and exiting"
+  if [[ "${NOTIFY_ON_NOCHANGE:-0}" == "1" ]]; then
+    text="ℹ️ No changes to commit for $MEMORY_PATH"
+    PAYLOAD=$(jq -n --arg t "$TIMESTAMP" --arg h "$HOST" --arg p "$MEMORY_PATH" --arg text "$text" '{timestamp:$t,host:$h,path:$p,summary: "no-change",text:$text}')
+    curl -s -S -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$WEBHOOK_URL" || true
+    echo "No changes detected for $MEMORY_PATH; notified and exiting"
+  else
+    echo "No changes detected for $MEMORY_PATH; nothing to do"
+  fi
   exit 0
 fi
 
