@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# write_memory.sh - atomically write MEMORY.md and POST a webhook notification
+# write_memory.sh - atomically write MEMORY.md, commit & push to repo, and POST a webhook notification
 # Usage: ./scripts/write_memory.sh /path/to/MEMORY.md "content-file-or-stdin" "WEBHOOK_URL"
 
 set -euo pipefail
@@ -27,9 +27,38 @@ mv "$TMPFILE" "$MEMORY_PATH"
 
 TIMESTAMP=$(date --iso-8601=seconds)
 HOST=$(hostname)
-PAYLOAD=$(jq -n --arg t "$TIMESTAMP" --arg h "$HOST" --arg p "$MEMORY_PATH" '{timestamp:$t,host:$h,path:$p,summary: "MEMORY.md updated"}')
 
-# send webhook (best-effort; exit non-zero if fails)
-curl -s -S -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$WEBHOOK_URL"
+# Commit & push changes (auto-commit + push)
+SSH_CMD="ssh -i ~/.ssh/openclaw_deploy_key -o StrictHostKeyChecking=no"
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo ".")"
 
-echo "Wrote $MEMORY_PATH and notified $WEBHOOK_URL at $TIMESTAMP"
+push_success=false
+commit_sha=""
+(
+  cd "$REPO_ROOT"
+  git add "$MEMORY_PATH"
+  git commit -m "chore(memory): update MEMORY.md [auto] - $TIMESTAMP" || true
+  # capture commit SHA (may be unchanged if nothing new)
+  commit_sha=$(git rev-parse HEAD || true)
+  # attempt push with retries
+  for i in 1 2 3; do
+    if GIT_SSH_COMMAND="$SSH_CMD" git push origin main; then
+      push_success=true
+      break
+    else
+      sleep $((i * 2))
+    fi
+  done
+)
+
+# prepare payload (include commit SHA)
+PAYLOAD=$(jq -n --arg t "$TIMESTAMP" --arg h "$HOST" --arg p "$MEMORY_PATH" --arg pushed "${push_success}" --arg sha "$commit_sha" '{timestamp:$t,host:$h,path:$p,pushed:$pushed,commit_sha:$sha,summary: "MEMORY.md updated"}')
+
+# send webhook (best-effort; do not fail the script if webhook fails)
+curl -s -S -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$WEBHOOK_URL" || true
+
+if $push_success; then
+  echo "Wrote $MEMORY_PATH, committed and pushed to origin/main, and notified $WEBHOOK_URL at $TIMESTAMP"
+else
+  echo "Wrote $MEMORY_PATH and notified $WEBHOOK_URL at $TIMESTAMP — push failed, see git logs" >&2
+fi
