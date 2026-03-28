@@ -1,3 +1,3 @@
 
-# Auto-commit test 2
-- 2026-03-28: auto-commit+push test 2
+# Test commit payload
+- 2026-03-28: test trigger commit url in webhook
