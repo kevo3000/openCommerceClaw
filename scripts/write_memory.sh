@@ -34,22 +34,22 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo ".")"
 
 push_success=false
 commit_sha=""
-(
-  cd "$REPO_ROOT"
-  git add "$MEMORY_PATH"
-  git commit -m "chore(memory): update MEMORY.md [auto] - $TIMESTAMP" || true
-  # capture commit SHA (may be unchanged if nothing new)
-  commit_sha=$(git rev-parse HEAD || true)
-  # attempt push with retries
-  for i in 1 2 3; do
-    if GIT_SSH_COMMAND="$SSH_CMD" git push origin main; then
-      push_success=true
-      break
-    else
-      sleep $((i * 2))
-    fi
-  done
-)
+# perform git operations in current shell so variables persist
+pushd "$REPO_ROOT" >/dev/null
+git add "$MEMORY_PATH"
+git commit -m "chore(memory): update MEMORY.md [auto] - $TIMESTAMP" || true
+# capture commit SHA (may be unchanged if nothing new)
+commit_sha=$(git rev-parse HEAD || true)
+# attempt push with retries
+for i in 1 2 3; do
+  if GIT_SSH_COMMAND="$SSH_CMD" git push origin main; then
+    push_success=true
+    break
+  else
+    sleep $((i * 2))
+  fi
+done
+popd >/dev/null
 
 # prepare payload (include commit SHA and commit URL)
 REPO_URL="https://github.com/kevo3000/openCommerceClaw"
