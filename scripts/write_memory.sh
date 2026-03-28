@@ -57,7 +57,14 @@ commit_url=""
 if [[ -n "$commit_sha" ]]; then
   commit_url="$REPO_URL/commit/$commit_sha"
 fi
-PAYLOAD=$(jq -n --arg t "$TIMESTAMP" --arg h "$HOST" --arg p "$MEMORY_PATH" --arg pushed "${push_success}" --arg sha "$commit_sha" --arg curl "$commit_url" '{timestamp:$t,host:$h,path:$p,pushed:$pushed,commit_sha:$sha,commit_url:$curl,summary: "MEMORY.md updated"}')
+# human-readable text for Rocket.Chat incoming webhook
+if [[ "$push_success" == "true" || "$push_success" == "True" ]]; then
+  text="✅ MEMORY.md updated and pushed: $commit_url"
+else
+  text="❌ MEMORY.md updated locally, but push failed. See repo logs."
+fi
+
+PAYLOAD=$(jq -n --arg t "$TIMESTAMP" --arg h "$HOST" --arg p "$MEMORY_PATH" --arg pushed "${push_success}" --arg sha "$commit_sha" --arg curl "$commit_url" --arg text "$text" '{timestamp:$t,host:$h,path:$p,pushed:$pushed,commit_sha:$sha,commit_url:$curl,summary: "MEMORY.md updated",text:$text}')
 
 # send webhook (best-effort; do not fail the script if webhook fails)
 curl -s -S -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$WEBHOOK_URL" || true
