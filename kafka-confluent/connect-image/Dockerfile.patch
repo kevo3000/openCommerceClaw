@@ -1,0 +1,3 @@
+# also copy jars into a plugin dir so Connect's plugin classloader can see them
+RUN cp /kafka/connect/libs/kafka-avro-serializer-${VERSION}.jar /kafka/connect/debezium-connector-postgres/ || true && \
+    cp /kafka/connect/libs/kafka-schema-registry-client-${VERSION}.jar /kafka/connect/debezium-connector-postgres/ || true

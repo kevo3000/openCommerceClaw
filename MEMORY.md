@@ -31,3 +31,15 @@
   - Design der Agenten/Producer/Consumer muss Replay-Fähigkeit, idempotente Verarbeitung und Snapshotting berücksichtigen.
   - Performance- und Konsistenztradeoffs (synchron vs. eventual consistency) werden explizit im Architekturkapitel behandelt.
 
+## Confluent + Debezium CDC Stack (Avro + Schema Registry)
+
+- 2026-04-04: Lokaler CDC-Stack auf der VM aufgesetzt und verifiziert.
+  - **Stack:** Zookeeper + Kafka + Schema Registry (Confluent 7.4.0) + Debezium Connect (debezium/connect:2.4) mit Confluent Avro Converter
+  - **Compose-Pfad:** /home/kevin/.openclaw/workspace/kafka-confluent/docker-compose.yml
+  - **Plugin-Volume:** cp_connect_plugins → gemountet als /kafka/connect im Connect-Container; enthält confluent-avro/ mit allen benötigten JARs (kafka-connect-avro-converter, kafka-avro-serializer, kafka-schema-serializer, kafka-schema-registry-client, avro, guava, etc.)
+  - **Connect-Container:** quick-debezium-connect (one-off docker run, nicht im compose; Image debezium/connect:2.4, Netzwerk cp-network, Port 18083→8083)
+  - **Postgres-Anpassungen (Host):** listen_addresses='*', pg_hba.conf für Docker-Bridges 172.17.0.0/16 + 172.20.0.0/16; User `debezium` (SUPERUSER, REPLICATION); Logical Slot `broadleaf_slot` (pgoutput)
+  - **Connector:** broadleaf-postgres-connector (topic.prefix=broadleaf, AvroConverter, Schema Registry http://schema-registry:8081)
+  - **Ergebnis:** CDC funktioniert; Test-Topic broadleaf.public.test_cdc erstellt; Avro-Schemas in Schema Registry registriert (key id=1, value id=2); kafka-avro-console-consumer zeigt deserialisierte Events
+  - **Offene Punkte:** Connect-Container ist ein one-off (nicht im compose integriert); debezium-User hat SUPERUSER (sollte für Prod eingeschränkt werden); Replication-Faktor = 1 (single broker)
+
