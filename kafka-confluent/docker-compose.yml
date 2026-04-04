@@ -4,6 +4,7 @@ services:
     image: confluentinc/cp-zookeeper:7.4.0
     hostname: zookeeper
     container_name: cp-zookeeper
+    restart: unless-stopped
     environment:
       CONNECT_BOOTSTRAP_SERVERS: "kafka:9092"
       ZOOKEEPER_CLIENT_PORT: 2181
@@ -17,6 +18,7 @@ services:
     image: confluentinc/cp-kafka:7.4.0
     hostname: kafka
     container_name: cp-kafka
+    restart: unless-stopped
     depends_on:
       - zookeeper
     ports:
@@ -39,6 +41,7 @@ services:
     image: confluentinc/cp-schema-registry:7.4.0
     hostname: schema-registry
     container_name: cp-schema-registry
+    restart: unless-stopped
     depends_on:
       - kafka
     ports:
@@ -54,16 +57,17 @@ services:
       - cp-network
 
   connect:
-    image: local/debezium-connect-avro:2.4
+    image: debezium/connect:2.4
     hostname: connect
     container_name: debezium-connect
+    restart: unless-stopped
     depends_on:
       - kafka
       - schema-registry
     ports:
       - "18083:8083"
     environment:
-      CONNECT_BOOTSTRAP_SERVERS: "kafka:9092"
+      BOOTSTRAP_SERVERS: 'kafka:9092'
       GROUP_ID: 1
       CONFIG_STORAGE_TOPIC: my_connect_configs
       OFFSET_STORAGE_TOPIC: my_connect_offsets
@@ -71,12 +75,12 @@ services:
       KEY_CONVERTER: io.confluent.connect.avro.AvroConverter
       VALUE_CONVERTER: io.confluent.connect.avro.AvroConverter
       # Using Schema Registry for Avro converters
-      CONNECT_KEY_CONVERTER_SCHEMA_REGISTRY_URL: 'http://schema-registry:8081'
-      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: 'http://schema-registry:8081'
+      KEY_CONVERTER_SCHEMA_REGISTRY_URL: 'http://schema-registry:8081'
+      VALUE_CONVERTER_SCHEMA_REGISTRY_URL: 'http://schema-registry:8081'
       PLUGIN_PATH: /kafka/connect
 
-      CONNECT_REST_ADVERTISED_HOST_NAME: "connect"
-      CONNECT_REST_PORT: 8083
+      REST_ADVERTISED_HOST_NAME: "connect"
+      REST_PORT: 8083
     volumes:
       - cp_connect_plugins:/kafka/connect
     networks:
